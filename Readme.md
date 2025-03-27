@@ -2,6 +2,7 @@
 
 Tested: Working Video 720p, 1080p & Sound.
 
+http://www.nyangau.org/rememotech/usage.htm
 ___
 # Rememotech MTX port for MiSTer FPGA Board.
 
