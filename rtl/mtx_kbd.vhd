@@ -59,7 +59,7 @@ entity mtx_kbd is
     sense5     : out std_logic_vector(7 downto 0);
     sense6     : out std_logic_vector(7 downto 0);
     -- other non-MTX keys
-    extra_keys : out std_logic_vector(13 downto 0)
+    extra_keys : out std_logic_vector(14 downto 0)
       -- 0=>F9, 1=>F10, 2=>F11, 3=>F12,
       -- 4=>PrtScrn, 5=>ScrollLock, 6=>Num-, 7=>Num+
       -- 8=>NumEnter, 9=>Menu, 10=>NumIns, 11=>NumDel
@@ -86,10 +86,10 @@ architecture behavior of mtx_kbd is
 
   -- Remember if PS/2 key was pressed with shift
   -- so that when it is released, we remove the same MTX key
-  signal shifts : std_logic_vector(10 downto 0);
+  signal shifts : std_logic_vector(11 downto 0);
 
   -- Extra non-MTX keys
-  signal xk : std_logic_vector(13 downto 0) := (others => '1');
+  signal xk : std_logic_vector(14 downto 0) := (others => '1');
 
 begin
 
@@ -194,7 +194,15 @@ begin
           when "01"&x"4a" => k(17) <= key_stroke;  --  95, Num/
           when "00"&x"7c" => k(08) <= key_stroke;  -- 100, Num*
           when "00"&x"7b" => xk(6) <= key_stroke;  -- 105, Num-
-          when "00"&x"0d" => k(28) <= key_stroke;  --  16, Tab
+          --when "00"&x"0d" => k(28) <= key_stroke;  --  16, Tab
+          when "00"&x"0d" =>                       --  16, Tab -> Shift-Tab = ExtraKey(14)
+            if key_stroke = '0' then
+              if shift     = '0' then xk(14) <= '0'; else k(28) <= '0'; end if;
+              shifts(11) <= shift;
+            else
+              if shifts(11) = '0' then xk(14) <= '1'; else k(28) <= '1'; end if;
+           end if;
+
           when "00"&x"15" => k(30) <= key_stroke;  --  17, Q
           when "00"&x"1d" => k(21) <= key_stroke;  --  18, W
           when "00"&x"24" => k(31) <= key_stroke;  --  19, E

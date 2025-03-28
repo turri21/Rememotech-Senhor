@@ -90,8 +90,7 @@ entity rememotech is
 	 Z80_Data 				: out STD_LOGIC_VECTOR (15 DOWNTO 0);
 	 Z80F_BData    		: out STD_LOGIC_VECTOR (15 DOWNTO 0);
 	 Hex						: out STD_LOGIC_VECTOR (15 DOWNTO 0);
-	 ExtraKeys14			: out STD_LOGIC_VECTOR (3 DOWNTO 0);
-
+	 EKey           		: in std_logic;
     key_ready  			: in  std_logic;
     key_stroke 			: in  std_logic;
     key_code   			: in  std_logic_vector(9 downto 0);
@@ -535,8 +534,7 @@ architecture behavior of rememotech is
   signal vdp_vblank      : std_logic;
 
   signal VDP_80Col		 : std_logic := '0'; -- Defines video output:  0 => 80Col, 1 => VDP
-  signal Switch_Video_Key_tmp: std_logic := '1'; -- 
-  signal VDP_80Col_tmp   : std_logic := '0'; -- 
+  signal Switch_Video_Key: std_logic := '0'; -- 
   
   -- Sound chip related
   signal sound_reg_we    : std_logic := '0';
@@ -743,7 +741,7 @@ begin
 		address 	=> SRAM_ADDR,
 		byteena 	=> not SRAM_UB_N & not SRAM_LB_N,
 		clken 	=> not SRAM_CE_N, --Dejo sin usar la señal OutputEnable que si usa el core Posible Punto de Fallo.
-		clock 	=> CLOCK_50,--Clk_Video, --CLOCK_50 , --TODO Probar Bram a 25 en lugar de 50, parece que OK.
+		clock 	=> CLOCK_50 ,
 		rden     => not SRAM_OE_n,
 		data 		=> SRAM_D ,
 		wren 		=> not SRAM_WE_N,
@@ -1021,9 +1019,7 @@ begin
   -- slow down clock if Flash is visible through the memory map
   -- Flash is 70ns, and at 25MHz, cycle time is 40ns, so halve it
   --div_cpu <= "001" when ( flash_vis = '1' and SW(9 downto 7) = "000" ) else SW(9 downto 7);
-
-  --div_cpu <= "001" when ( sd_sel = '1' or sd_command = '1' or sd_command_ff = '1' ) else SW(9 downto 7); --Acelerar la cpu si acceso a sd
-  div_cpu <= "001" when (SW(9 downto 7) > 3) and ( sd_sel = '1' or sd_command = '1' or sd_command_ff = '1' ) else SW(9 downto 7); --Acelerar la cpu si acceso a sd
+  div_cpu <= "001" when ( sd_sel = '1' or sd_command = '1' or sd_command_ff = '1' ) else SW(9 downto 7); --Acelerar la cpu si acceso a sd
 
   -- See clock speed setting
   LEDR(9 downto 7) <= div_cpu;
@@ -1357,59 +1353,46 @@ begin
   cursor_g <= '1';
   cursor_b <= '1';
   
+  --VDP_80Col <= SW(6) xor (not extra_keys(14)); --extra_keys(14): 0 => Pulsado Shift-Tab 
 
-  ExtraKeys14	<= RESET_n & VDP_80Col & Switch_Video_Key_tmp & extra_keys(14);
-
-  VDP_80Col <= SW(6) xor (not extra_keys(14)); --extra_keys(14): 0 => Pulsado Shift-Tab   THIS WORKS!!
-  --VDP_80Col <= SW(6);
-
---  process(extra_keys(14), RESET_n)
---  begin
---	if RESET_n = '0' then
---		VDP_80Col <= '0';
---		Switch_Video_Key_tmp <= '1';
---	else
---		if ((extra_keys(14))='0' and Switch_Video_Key_tmp='1') then --if ((not extra_keys(14))='1' and Switch_Video_Key_tmp /= extra_keys(14)) then
---			VDP_80Col <= VDP_80Col xor '1';
---		else 
---			VDP_80Col <= VDP_80Col;
---		end if;
---		Switch_Video_Key_tmp <= extra_keys(14);
---	end if;
---  end process;
+  VDP_80Col <= SW(6);
   
---OLD
-  
+--  Switch_Video_Key <= not extra_keys(14);
 
   --process(Switch_Video_Key)
---  process(extra_keys(14), RESET_N)
+--  process(extra_keys(14), SW(6))
 --  begin
---	if RESET_n = '0' then
---		VDP_80Col <= '0';
---		Switch_Video_Key_tmp <= '1';
---	else
---		VDP_80Col <= VDP_80Col xor not Switch_Video_Key_tmp;--(not extra_keys(14));-- SW(6) xor  --'1'
---	end if;
---   Switch_Video_Key_tmp <= extra_keys(14); 
---
----- --if (Switch_Video_Key_tmp = '1') then
-----		--VDP_80Col <= VDP_80Col xor SW(6) xor Switch_Video_Key; --'1'
-----		--VDP_80Col <= SW(6) xor (not extra_keys(14));--SW(6) xor Switch_Video_Key; --'1'
-----		--VDP_80Col <= ((not extra_keys(14))='0') ? VDP_80Col : not VDP_80Col;-- SW(6) xor  --'1'
-----		VDP_80Col <= VDP_80Col xor Switch_Video_Key_tmp;--(not extra_keys(14));-- SW(6) xor  --'1'
-----	--end if;
+--	--if (Switch_Video_Key = '1') then
+--		--VDP_80Col <= VDP_80Col xor SW(6) xor Switch_Video_Key; --'1'
+--		--VDP_80Col <= SW(6) xor (not extra_keys(14));--SW(6) xor Switch_Video_Key; --'1'
+--		--VDP_80Col <= ((not extra_keys(14))='0') ? VDP_80Col : not VDP_80Col;-- SW(6) xor  --'1'
+--		VDP_80Col <= VDP_80Col xor (not extra_keys(14));-- SW(6) xor  --'1'
+--	--end if;
 --  end process;
 
   
+--  0 0 0 -> arranque 80Col
+--  0 1 1
+--  1 0 1 -> VDP
+--  1 1 0 -> vdp
   
+--  process(Switch_Video_Key)
+--  begin
+--	if (Switch_Video_Key = '1') then
+--		VDP_80Col <= VDP_80Col --'1';
+--	end if;
+--  end process;
+  
+
+
   
   -- green LEDs reflect processor choice
-  --LEDG <= ledg_int;
+  LEDG <= ledg_int;
 
   -- flicker light if SD card recently spoken to
   -- 25 bit counter, 2**25/25000000 = 1.34s of flickering, and the SD Card
   -- driver should consider drive warm for the first half of that
-  --LEDR(0) <= '0' when ( sd_temp = "00000000000000000000000000" ) else sd_temp(19);
+  LEDR(0) <= '0' when ( sd_temp = "00000000000000000000000000" ) else sd_temp(19);
 
   -- VGA monitor displays either 80 column or VDP
   VGA_R  <= vdp_r      when ( VDP_80Col = '1' ) else mon_r&mon_r&mon_r&mon_r;
@@ -1420,16 +1403,19 @@ begin
   VGA_HB <= vdp_hblank when ( VDP_80Col = '1' ) else mon_hblank;
   VGA_VB <= vdp_vblank when ( VDP_80Col = '1' ) else mon_vblank;
 
+  -- TODO Hasta que lo implkemente en em modulo mon como en vdp
+  --mon_hblank <= '0';
+  --mon_vblank <= '0';
   
   -- 2nd VGA monitor displays the opposite
---  G1_R   <= vdp_r     when ( VDP_80Col = '1' ) else mon_r&mon_r&mon_r&mon_r;
---  G1_G   <= vdp_g     when ( VDP_80Col = '1' ) else mon_g&mon_g&mon_g&mon_g;
---  G1_B   <= vdp_b     when ( VDP_80Col = '1' ) else mon_b&mon_b&mon_b&mon_b;
---  G1_HS  <= vdp_hsync when ( VDP_80Col = '1' ) else mon_hsync;
---  G1_VS  <= vdp_vsync when ( VDP_80Col = '1' ) else mon_vsync;
+  G1_R   <= vdp_r     when ( VDP_80Col = '0' ) else mon_r&mon_r&mon_r&mon_r;
+  G1_G   <= vdp_g     when ( VDP_80Col = '0' ) else mon_g&mon_g&mon_g&mon_g;
+  G1_B   <= vdp_b     when ( VDP_80Col = '0' ) else mon_b&mon_b&mon_b&mon_b;
+  G1_HS  <= vdp_hsync when ( VDP_80Col = '0' ) else mon_hsync;
+  G1_VS  <= vdp_vsync when ( VDP_80Col = '0' ) else mon_vsync;
 
   -- so we can see video choices
---  LEDR(6 downto 4) <= SW(6 downto 4);
+  LEDR(6 downto 4) <= SW(6 downto 4);
 
   -- control the volume of the sound
   sound_to_codec <= (others => '0')
@@ -1441,7 +1427,7 @@ begin
   else sound_output&"00";
 
   -- so we can see volume choices
---  LEDR(3 downto 2) <= SW(3 downto 2);
+  LEDR(3 downto 2) <= SW(3 downto 2);
 
   -- drive centronics
   G0_PRD <= prd;
