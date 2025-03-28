@@ -129,17 +129,17 @@ module emu
 assign ADC_BUS  = 'Z;
 assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
-//assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
+//assign {UART_DTR,UART_RTS} = 1;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;  
 
 assign VGA_SL = 0;
 assign VGA_F1 = 0;
 
-assign AUDIO_S = 0;//status[11];
-assign AUDIO_L = {AudioOut,8'b0};
-assign AUDIO_R = {AudioOut,8'b0};
-assign AUDIO_MIX = 0;//status[10:9];
+assign AUDIO_S = 1; //Senhor: Noisy sound when it was assigned to 0, switched to signed: assign AUDIO_S = 1;
+assign AUDIO_L = {AudioOut, 8'b0}; 
+assign AUDIO_R = {AudioOut, 8'b0};
+assign AUDIO_MIX = 0;
 
 assign LED_DISK = 0;
 assign LED_POWER = 0;
@@ -154,21 +154,21 @@ assign VIDEO_ARY = status[1] ? 8'd9  : 8'd3;
 localparam CONF_STR = {
 	"Rememotech;;",
 	"-;",
-//	"OB,Negate SD_CS, No, Yes;",
 	"O4,Video Out,80Col,VDP;",
+	"-;",	
+	"S,VHD;",
+	"OE,Reset after Mount,No,Yes;",
+	"-;",
 	"O1,Aspect ratio,4:3,16:9;",
 	"O2,PAL,Normal,Marat;",
 	"O3,Hz,60,50;",
-	"O57,Cpu Mzh,12.5,12.5,8.333,6.25,5,4.166,3.571,3.125;",
-   "O8,OSD DEBUG,Yes,No;",
-//	"O9A,AudioMix,No, 25%, 50%, 100%-Mono;",
-//	"O7,OSD DEBUG Enable,Yes,No;",
-//	"O8,Negate Blanks,No,Yes;",
+	"O57,Cpu Mzh,12.5,12.5,8.333,6.25,5,4.166,3.571,3.571;",
+   "O8,OSD DEBUG,No,Yes;",
 	"-;",
 	"-;",
 	"T0,Reset;",
 	"R0,Reset and close OSD;",
-	"V,v",`BUILD_DATE 
+	"V,Senhor-",`BUILD_DATE 
 };
 
       // 000 => 25.000MHz
@@ -186,6 +186,24 @@ wire [31:0] status;
 wire [10:0] ps2_key;
 
 
+//Intento vhd
+wire [31:0] sd_lba;
+wire        sd_rd;
+wire        sd_wr;
+wire        sd_ack;
+wire  [8:0] sd_buff_addr;
+wire  [7:0] sd_buff_dout;
+wire  [7:0] sd_buff_din;
+wire        sd_buff_wr;
+wire        img_mounted;
+wire        img_readonly;
+wire [63:0] img_size;
+wire        sd_ack_conf;
+
+
+
+
+
 hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 (
 	.clk_sys(clk_sys),
@@ -196,7 +214,23 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-//	.status_menumask({status[5]}),
+
+// VHD
+	.sd_lba(sd_lba),
+	.sd_rd(sd_rd),
+	.sd_wr(sd_wr),
+	.sd_ack(sd_ack),
+	.sd_ack_conf(sd_ack_conf),
+	.sd_buff_addr(sd_buff_addr),
+	.sd_buff_dout(sd_buff_dout),
+	.sd_buff_din(sd_buff_din),
+	.sd_buff_wr(sd_buff_wr),
+	.img_mounted(img_mounted),
+	.img_readonly(img_readonly),
+	.img_size(img_size),
+	.ioctl_wait(0),
+	
+
 	
 	.ps2_key(ps2_key),
 
@@ -209,19 +243,80 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 
 ///////////////////////   CLOCKS   ///////////////////////////////
 
-wire clk_25Mhz;
+wire clk_25Mhz, clk_100Mhz;
 pll pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
-	.outclk_0(clk_25Mhz)
+	.outclk_0(clk_25Mhz),
+	.outclk_1(clk_100Mhz)
 );
 
-wire reset = RESET | status[0] | buttons[1];
+
+// VHD
+wire reset = RESET | status[0] | buttons[1] | (status[14] && img_mounted);
+
+//////////////////   SD   ///////////////////
+
+wire sdclk;
+wire sdmosi;
+wire sdmiso = vsd_sel ? vsdmiso : SD_MISO;
+wire sdss;
+
+reg vsd_sel = 0;
+always @(posedge clk_sys) if(img_mounted) vsd_sel <= |img_size;
+
+
+// sd_clk_spi = clk_100Mhz y sd_clk_sys = CLK_50M OK si cpu > 5Mhz 
+//wire sd_clk_spi, sd_clk_sys;
+//assign sd_clk_sys = CLK_50M;
+//assign sd_clk_spi = (CpuSpeed < 3'b100) ? clk_100Mhz : clk_25Mhz; // clk_100Mhz;
+
+
+wire vsdmiso;
+sd_card sd_card
+(
+	.*,
+	.clk_sys(CLK_50M),//(sd_clk_sys),//CLK_50M
+	.clk_spi(clk_100Mhz),//(sd_clk_spi),//OK (clk_100Mhz) con clk_sys = CLK_50M, //(clk_250Mhz),
+	.sdhc(0),
+	.sck(sdclk),
+	.ss(sdss | ~vsd_sel),
+	.mosi(sdmosi),
+	.miso(vsdmiso)
+);
+
+assign SD_CS   = sdss   |  vsd_sel;
+assign SD_SCK  = sdclk  & ~vsd_sel;
+assign SD_MOSI = sdmosi & ~vsd_sel;
+
+
+//Para el Led -> TODO
+//reg sd_act;
+//
+//always @(posedge clk_sys) begin
+//	reg old_mosi, old_miso;
+//	integer timeout = 0;
+//
+//	old_mosi <= sdmosi;
+//	old_miso <= sdmiso;
+//
+//	sd_act <= 0;
+//	if(timeout < 1000000) begin
+//		timeout <= timeout + 1;
+//		sd_act <= 1;
+//	end
+//
+//	if((old_mosi ^ sdmosi) || (old_miso ^ sdmiso)) timeout <= 0;
+//end
+
+
+
+
+
 
 //////////////////////////////////////////////////////////////////
 
-//wire [1:0] col = status[4:3];
 
 wire [3:0] r,g,b;
 wire HBlank;
@@ -230,15 +325,11 @@ wire VBlank;
 wire VSync;
 wire Ps2_Clk, Ps2_Dat;
 wire  [2:0] CpuSpeed;
-//wire SD_CS_n, SD_SCK_tmp, SD_MOSI_tmp;//,SD_MISO_tmp;
-
-//assign SD_CS = SD_CS_n;
-//assign SD_SCK = SD_SCK_tmp;
-//assign SD_MOSI = SD_MOSI_tmp;
 
 
 
-assign CpuSpeed = (status[7:5]==3'b0) ? 3'b001:status[7:5];
+assign CpuSpeed = (status[7:5]==3'b0) ? 3'b001: (status[7:5]==3'b111) ? 3'b110: status[7:5]; //Si 000(25Mzh) -> 001(12,5 Mz) 25 no arranca. Si 111(3,14Mzh) -> 110(3,6Mz) 25 no arranca.
+//assign CpuSpeed = (status[7:5]==3'b0) ? 3'b001: status[7:5]; //Si 000(25Mzh) -> 001(12,5 Mz) 25 no arranca.
 
 rememotech rememotech
     (
@@ -252,10 +343,12 @@ rememotech rememotech
     //.SRAM_WE_N           (SRAM_WE_N),
     //.SRAM_DQ             (SRAM_DQ),
     // SD card
-    .SD_CLK              (SD_SCK),
-    .SD_CMD              (SD_MOSI),
-    .SD_DAT              (SD_MISO),
-    .SD_DAT3             (SD_CS),
+
+    .SD_CLK              (sdclk),
+    .SD_CMD              (sdmosi),
+    .SD_DAT              (sdmiso),
+    .SD_DAT3             (sdss),
+
 
     // PS/2 keyboard
     .PS2_CLK             (Ps2_Clk),
@@ -263,6 +356,7 @@ rememotech rememotech
     // switches
     //.SW                  (10'b0001010000), //Forzamos monitor(6), Pal normal-60Hz(5:4), y sin externalrom(1:0)
 	 .SW                  ({CpuSpeed,status[4],status[2],~status[3],2'b0,2'b0}), //Forzamos monitor(6), Pal normal-60Hz(5:4), y sin externalrom(1:0)
+//	 .SW                  ({CpuSpeed,1'b0,status[2],~status[3],2'b0,2'b0}), //Forzamos monitor(6), Pal normal-60Hz(5:4), y sin externalrom(1:0)
     // key switches
     .KEY                 ({reset,3'b111}),
     // LEDs
@@ -280,8 +374,8 @@ rememotech rememotech
     //.I2C_SCLK            (),
     //.I2C_SDAT            (),
     // UART
-    //.UART_RXD            (),
-    //.UART_TXD            (),
+    //.UART_RXD            (UART_RXD),
+    //.UART_TXD            (UART_TXD),
 
 	 .Clk_Video           	(clk_25Mhz),
 	 .Bram_Data 				(BramData),		//: OUT STD_LOGIC_VECTOR (15 DOWNTO 0);
@@ -289,7 +383,8 @@ rememotech rememotech
 	 .Z80_Data 					(Z80Data),
 	 .Z80F_BData		 		(Z80F_BData),
 	 .Hex							(Hex),
-	 .EKey						(status[9]),
+	 .ExtraKeys14				(ExtraKeys14),
+
     .key_ready  				(key_strobe),//key_ready), //: in  std_logic;
     .key_stroke 				(~ps2_key[9]), //: in  std_logic;
     .key_code   				({1'b0,ps2_key[8:0]}), //: in  std_logic_vector(9 downto 0)
@@ -300,6 +395,9 @@ rememotech rememotech
 
 wire clk_sys;
 wire [7:0] AudioOut;
+
+
+//assign clk_sys = CLK_50M; //Probado que el clk_sys sea 50 en lugar de clk_cpu No FUNCIONA
 	 
 //wire key_ready;
 //
@@ -390,7 +488,7 @@ assign VGA_HS_tmp = ~HSync;
 assign VGA_VS_tmp = ~VSync;
 assign VGA_DE_tmp = ~(HBlank | VBlank);
 assign VGA_CLK_tmp = clk_25Mhz;
-assign Show = ~status[8]; // si visible o si no visible
+assign Show = status[8];//~status[8]; // si visible o si no visible
 
 //Datos a mostrar
 
@@ -399,19 +497,22 @@ wire [15:0] Z80Addr;
 wire [15:0] Z80Data;
 wire [15:0] Z80F_BData;
 wire [15:0] Hex;
+wire [3:0] ExtraKeys14;
 wire [15:0] DebugL0, DebugL1,DebugL2, DebugL3,DebugL4, DebugL5, DebugL6, DebugL7;
 
 //assign DebugL0 = ({5'b00000,5'b00001,5'b00001});
 //assign DebugL1 = ({5'b00010,5'b00011,5'b00011})
 
-
-assign DebugL0 = {{2'b00,SD_SCK,SD_CD},{3'b000,clk},{3'b000,status[9]},{3'b000,clk_25Mhz}};//BramData;//rememotech.U_RamRom.q[14:0];
-//assign DebugL1 = {5'b00000,5'b00001,{4'b0000,clk_25Mhz}}; //assign DebugL1 = Z80Addr[14:0];
+//Sample
+// DebugLx must be 16 Bits => 4 digits of 4 bits each one
+//assign DebugL1 = {4'b0000,4'b0001,4'b0010,{3'b0000,clk_25Mhz}}; 
+//assign DebugL2 = {4'b0000,4'b0001,4'b0010,{3'b0000,clk_25Mhz}}; 
+assign DebugL0 = {{1'b0,vsd_sel,img_mounted,SD_CD},{3'b000,clk},{3'b000,status[9]},{3'b000,clk_25Mhz}};//BramData;//rememotech.U_RamRom.q[14:0];
 assign DebugL1 = Z80Addr;
 assign DebugL2 = Z80Data;
 assign DebugL3 = Z80F_BData; //"00" & not ctc_interrupt & M1_n & MREQ_n & IORQ_n & RD_n & WR_n & rom_q;
 assign DebugL4 = Hex;
-assign DebugL5 = BramData;
+assign DebugL5 = {{1'b0,CpuSpeed},{3'b000,(CpuSpeed < 3'b100)},ExtraKeys14,img_size[3:0]}; 
 
 
 
