@@ -3,6 +3,8 @@
 Tested: Working Video 720p, 1080p & Sound.
 
 http://www.nyangau.org/rememotech/usage.htm
+
+Dev notes: In Rememotech.sv assign AUDIO_S = 1; //Senhor: Noisy sound when it was assigned to 0, switched to signed: assign AUDIO_S = 1;
 ___
 # Rememotech MTX port for MiSTer FPGA Board.
 
